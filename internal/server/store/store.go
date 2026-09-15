@@ -16,6 +16,8 @@ var ErrUserExists = fmt.Errorf("user already exists")
 var ErrUserNotFound = fmt.Errorf("user not found")
 var ErrVaultNotFound = fmt.Errorf("vault not found")
 var ErrVaultExists = fmt.Errorf("vault already exists")
+var ErrManifestNotFound = fmt.Errorf("manifest not found")
+var ErrManifestConflict = fmt.Errorf("manifest generation conflict")
 
 type Store struct {
 	db *sql.DB
@@ -42,6 +44,13 @@ type Blob struct {
 	ID        string    `json:"id"`
 	SizeBytes int64     `json:"size_bytes"`
 	CreatedAt time.Time `json:"created_at"`
+}
+
+type Manifest struct {
+	VaultID    string    `json:"vault_id"`
+	Generation int64     `json:"generation"`
+	Ciphertext []byte    `json:"-"`
+	UpdatedAt  time.Time `json:"updated_at"`
 }
 
 func Open(ctx context.Context, dsn string) (*Store, error) {
@@ -249,4 +258,61 @@ func (s *Store) PutBlob(ctx context.Context, vaultID, blobID string, sizeBytes i
 		return fmt.Errorf("store: put blob: %w", err)
 	}
 	return nil
+}
+
+func (s *Store) GetManifest(ctx context.Context, vaultID string) (Manifest, error) {
+	var m Manifest
+	err := s.db.QueryRowContext(ctx, `
+		SELECT vault_id, generation, ciphertext, updated_at
+		FROM manifests
+		WHERE vault_id = ?`,
+		vaultID,
+	).Scan(&m.VaultID, &m.Generation, &m.Ciphertext, &m.UpdatedAt)
+
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return Manifest{}, ErrManifestNotFound
+		}
+
+		return Manifest{}, fmt.Errorf("store: get manifest: %w", err)
+	}
+	return m, nil
+}
+
+// PutManifest writes a new manifest generation using optimistic concurrency:
+// expectedGeneration must be 0 for the vault's first manifest (no row yet), or
+// match the current row's generation for every write after that. A mismatch —
+// including a second "first write" once a manifest already exists — returns
+// ErrManifestConflict rather than silently overwriting a concurrent change.
+func (s *Store) PutManifest(ctx context.Context, vaultID string, expectedGeneration int64, ciphertext []byte) (Manifest, error) {
+	newGeneration := expectedGeneration + 1
+	var m Manifest
+	var err error
+
+	if expectedGeneration == 0 {
+		err = s.db.QueryRowContext(ctx, `
+			INSERT INTO manifests (vault_id, generation, ciphertext)
+			VALUES (?, ?, ?)
+			ON CONFLICT (vault_id) DO NOTHING
+			RETURNING vault_id, generation, ciphertext, updated_at`,
+			vaultID, newGeneration, ciphertext,
+		).Scan(&m.VaultID, &m.Generation, &m.Ciphertext, &m.UpdatedAt)
+	} else {
+		err = s.db.QueryRowContext(ctx, `
+			UPDATE manifests
+			SET generation = ?, ciphertext = ?, updated_at = CURRENT_TIMESTAMP
+			WHERE vault_id = ? AND generation = ?
+			RETURNING vault_id, generation, ciphertext, updated_at`,
+			newGeneration, ciphertext, vaultID, expectedGeneration,
+		).Scan(&m.VaultID, &m.Generation, &m.Ciphertext, &m.UpdatedAt)
+	}
+
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return Manifest{}, ErrManifestConflict
+		}
+
+		return Manifest{}, fmt.Errorf("store: put manifest: %w", err)
+	}
+	return m, nil
 }
