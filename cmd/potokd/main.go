@@ -49,6 +49,8 @@ func main() {
 	nethttp.Handle("DELETE /vaults/{name}", handler.APIKeyAuth(nethttp.HandlerFunc(handler.DeleteVault)))
 	nethttp.Handle("PUT /vaults/{name}/blobs/{id}", handler.APIKeyAuth(nethttp.HandlerFunc(handler.PutBlob)))
 	nethttp.Handle("GET /vaults/{name}/blobs/{id}", handler.APIKeyAuth(nethttp.HandlerFunc(handler.GetBlob)))
+	nethttp.Handle("PUT /vaults/{name}/manifest", handler.APIKeyAuth(nethttp.HandlerFunc(handler.PutManifest)))
+	nethttp.Handle("GET /vaults/{name}/manifest", handler.APIKeyAuth(nethttp.HandlerFunc(handler.GetManifest)))
 	nethttp.Handle("GET /me", handler.APIKeyAuth(nethttp.HandlerFunc(handler.Me)))
 	log.Fatal(nethttp.ListenAndServe(cfg.Addr, nil))
 }

@@ -22,6 +22,8 @@ type Store interface {
 	GetBlob(ctx context.Context, userID, vaultName, blobName string) (store.Blob, error)
 	PutBlob(ctx context.Context, vaultID, blobID string, sizeBytes int64) error
 	HasBlob(ctx context.Context, vaultID, blobID string) (bool, error)
+	GetManifest(ctx context.Context, vaultID string) (store.Manifest, error)
+	PutManifest(ctx context.Context, vaultID string, expectedGeneration int64, ciphertext []byte) (store.Manifest, error)
 }
 
 type Handler struct {
