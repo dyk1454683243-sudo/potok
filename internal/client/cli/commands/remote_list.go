@@ -4,20 +4,13 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"time"
 
 	"github.com/fatih/color"
 	"github.com/mtiluk/potok/internal/client/config"
 	"github.com/mtiluk/potok/internal/client/secrets"
+	"github.com/mtiluk/potok/internal/client/transport"
 	"github.com/spf13/cobra"
 )
-
-type remoteVault struct {
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
-}
 
 func NewRemoteListCmd() *cobra.Command {
 	return &cobra.Command{
@@ -25,21 +18,18 @@ func NewRemoteListCmd() *cobra.Command {
 		Short: "List all remote vaults",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-
-			// 1. Config load
 			cfg, err := config.Load()
 			if err != nil {
 				return errors.New(color.RedString("Error loading config: %v", err))
 			}
 
-			// 2. API key check
 			apiKey, err := secrets.Get(secrets.APIKey)
 			if err != nil {
 				return errors.New(color.RedString("Error getting API key: %v", err))
 			}
 
-			var vaults []remoteVault
-			response, err := apiRequestJSON(cfg.ServerURL, apiKey, http.MethodGet, "/vaults", &vaults)
+			var vaults []transport.Vault
+			response, err := transport.New(cfg.ServerURL, apiKey).RequestJSON(http.MethodGet, "/vaults", &vaults)
 			if err != nil {
 				return err
 			}

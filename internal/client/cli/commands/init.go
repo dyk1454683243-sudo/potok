@@ -8,6 +8,7 @@ import (
 	"github.com/fatih/color"
 	"github.com/mtiluk/potok/internal/client/config"
 	"github.com/mtiluk/potok/internal/client/secrets"
+	"github.com/mtiluk/potok/internal/client/transport"
 	"github.com/spf13/cobra"
 )
 
@@ -31,7 +32,7 @@ func NewInitCmd() *cobra.Command {
 			fmt.Println("Validating API key and server URL...")
 			fmt.Println()
 
-			response, err := apiRequest(serverURL, apiKey, http.MethodGet, "/me")
+			response, err := transport.New(serverURL, apiKey).Request(http.MethodGet, "/me")
 			if err != nil {
 				return err
 			}

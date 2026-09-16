@@ -1,6 +1,7 @@
 package store
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"testing"
@@ -51,6 +52,46 @@ func TestCreateVault(t *testing.T) {
 	}
 	if vault.UpdatedAt.IsZero() {
 		t.Error("UpdatedAt is zero")
+	}
+	if len(vault.KDFSalt) != kdfSaltLen {
+		t.Errorf("KDFSalt length = %d, want %d", len(vault.KDFSalt), kdfSaltLen)
+	}
+}
+
+func TestCreateVaultUniqueSalts(t *testing.T) {
+	s := newTestStore(t)
+	user := seedUser(t, s, "a@example.com")
+
+	v1, err := s.CreateVault(context.Background(), user.ID, "notes")
+	if err != nil {
+		t.Fatalf("CreateVault(notes) error: %v", err)
+	}
+	v2, err := s.CreateVault(context.Background(), user.ID, "journal")
+	if err != nil {
+		t.Fatalf("CreateVault(journal) error: %v", err)
+	}
+
+	if bytes.Equal(v1.KDFSalt, v2.KDFSalt) {
+		t.Error("two vaults got the same KDFSalt")
+	}
+}
+
+func TestVaultByNameReturnsSameSaltAsCreate(t *testing.T) {
+	s := newTestStore(t)
+	user := seedUser(t, s, "a@example.com")
+
+	created, err := s.CreateVault(context.Background(), user.ID, "notes")
+	if err != nil {
+		t.Fatalf("CreateVault() error: %v", err)
+	}
+
+	got, err := s.VaultByName(context.Background(), user.ID, "notes")
+	if err != nil {
+		t.Fatalf("VaultByName() error: %v", err)
+	}
+
+	if !bytes.Equal(got.KDFSalt, created.KDFSalt) {
+		t.Errorf("VaultByName KDFSalt = %x, want %x", got.KDFSalt, created.KDFSalt)
 	}
 }
 

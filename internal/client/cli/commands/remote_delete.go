@@ -10,6 +10,7 @@ import (
 	"github.com/fatih/color"
 	"github.com/mtiluk/potok/internal/client/config"
 	"github.com/mtiluk/potok/internal/client/secrets"
+	"github.com/mtiluk/potok/internal/client/transport"
 	"github.com/spf13/cobra"
 )
 
@@ -31,7 +32,7 @@ func NewRemoteDeleteCmd() *cobra.Command {
 				return errors.New(color.RedString("Error getting API key: %v", err))
 			}
 
-			response, err := apiRequest(cfg.ServerURL, apiKey, http.MethodDelete, "/vaults/"+vaultName)
+			response, err := transport.New(cfg.ServerURL, apiKey).Request(http.MethodDelete, "/vaults/"+vaultName)
 			if err != nil {
 				return err
 			}

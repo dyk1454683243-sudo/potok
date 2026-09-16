@@ -66,7 +66,6 @@ func ScanVault(dir string) ([]FileInfo, error) {
 	return files, nil
 }
 
-// SHA-256 of contents for change detection between scans.
 func hashFile(path string) (string, error) {
 	f, err := os.Open(path)
 	if err != nil {

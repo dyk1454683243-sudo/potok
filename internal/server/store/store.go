@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"crypto/rand"
 	"database/sql"
 	"fmt"
 	"strings"
@@ -11,6 +12,8 @@ import (
 	"github.com/mtiluk/potok/internal/server/auth"
 	"golang.org/x/crypto/bcrypt"
 )
+
+const kdfSaltLen = 16
 
 var ErrUserExists = fmt.Errorf("user already exists")
 var ErrUserNotFound = fmt.Errorf("user not found")
@@ -26,6 +29,7 @@ type Store struct {
 type Vault struct {
 	ID        string    `json:"id"`
 	Name      string    `json:"name"`
+	KDFSalt   []byte    `json:"kdf_salt"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
@@ -77,19 +81,25 @@ func Open(ctx context.Context, dsn string) (*Store, error) {
 func (s *Store) Close() error { return s.db.Close() }
 
 func (s *Store) CreateVault(ctx context.Context, userID, name string) (Vault, error) {
+	salt := make([]byte, kdfSaltLen)
+	if _, err := rand.Read(salt); err != nil {
+		return Vault{}, fmt.Errorf("store: create vault: generate kdf salt: %w", err)
+	}
+
 	vault := Vault{
 		ID:        uuid.NewString(),
 		Name:      name,
+		KDFSalt:   salt,
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 	}
 
 	err := s.db.QueryRowContext(ctx, `
-		INSERT INTO vaults (id, user_id, name, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5)
+		INSERT INTO vaults (id, user_id, name, kdf_salt, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6)
 		ON CONFLICT (user_id, name) DO NOTHING
 		RETURNING id`,
-		vault.ID, userID, name, vault.CreatedAt, vault.UpdatedAt,
+		vault.ID, userID, name, vault.KDFSalt, vault.CreatedAt, vault.UpdatedAt,
 	).Scan(&vault.ID)
 
 	if err != nil {
@@ -105,7 +115,7 @@ func (s *Store) CreateVault(ctx context.Context, userID, name string) (Vault, er
 func (s *Store) VaultByName(ctx context.Context, userID, name string) (Vault, error) {
 	var vault Vault
 
-	err := s.db.QueryRowContext(ctx, "SELECT id, name, created_at, updated_at FROM vaults WHERE user_id = $1 AND name = $2", userID, name).Scan(&vault.ID, &vault.Name, &vault.CreatedAt, &vault.UpdatedAt)
+	err := s.db.QueryRowContext(ctx, "SELECT id, name, kdf_salt, created_at, updated_at FROM vaults WHERE user_id = $1 AND name = $2", userID, name).Scan(&vault.ID, &vault.Name, &vault.KDFSalt, &vault.CreatedAt, &vault.UpdatedAt)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return Vault{}, ErrVaultNotFound
@@ -118,7 +128,7 @@ func (s *Store) VaultByName(ctx context.Context, userID, name string) (Vault, er
 }
 
 func (s *Store) ListVaults(ctx context.Context, userID string) ([]Vault, error) {
-	rows, err := s.db.QueryContext(ctx, "SELECT id, name, created_at, updated_at FROM vaults WHERE user_id = $1", userID)
+	rows, err := s.db.QueryContext(ctx, "SELECT id, name, kdf_salt, created_at, updated_at FROM vaults WHERE user_id = $1", userID)
 	if err != nil {
 		return []Vault{}, fmt.Errorf("store: list vaults: %w", err)
 	}
@@ -128,7 +138,7 @@ func (s *Store) ListVaults(ctx context.Context, userID string) ([]Vault, error) 
 
 	for rows.Next() {
 		var vault Vault
-		if err := rows.Scan(&vault.ID, &vault.Name, &vault.CreatedAt, &vault.UpdatedAt); err != nil {
+		if err := rows.Scan(&vault.ID, &vault.Name, &vault.KDFSalt, &vault.CreatedAt, &vault.UpdatedAt); err != nil {
 			return []Vault{}, fmt.Errorf("store: list vaults: %w", err)
 		}
 		vaults = append(vaults, vault)
@@ -279,11 +289,6 @@ func (s *Store) GetManifest(ctx context.Context, vaultID string) (Manifest, erro
 	return m, nil
 }
 
-// PutManifest writes a new manifest generation using optimistic concurrency:
-// expectedGeneration must be 0 for the vault's first manifest (no row yet), or
-// match the current row's generation for every write after that. A mismatch —
-// including a second "first write" once a manifest already exists — returns
-// ErrManifestConflict rather than silently overwriting a concurrent change.
 func (s *Store) PutManifest(ctx context.Context, vaultID string, expectedGeneration int64, ciphertext []byte) (Manifest, error) {
 	newGeneration := expectedGeneration + 1
 	var m Manifest
