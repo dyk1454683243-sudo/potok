@@ -60,13 +60,11 @@ func TestScanVault(t *testing.T) {
 		t.Errorf("note.md Hash = %q, want %q", note.Hash, want)
 	}
 
-	// Nested path is preserved, not collapsed to the basename.
 	daily := findByPath(t, files, filepath.Join("daily", "2026-09-16.md"))
 	if want := hashOf([]byte("today's entry")); daily.Hash != want {
 		t.Errorf("daily entry Hash = %q, want %q", daily.Hash, want)
 	}
 
-	// Non-markdown files are included too - the scan isn't note-only.
 	findByPath(t, files, filepath.Join("attachments", "photo.png"))
 }
 
