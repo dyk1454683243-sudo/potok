@@ -14,7 +14,7 @@ For more detail, check out the [Potok Docs](https://potok-docs.vercel.app/)
 - **Multiple Vaults** — Manage and sync multiple vaults independently.
 - **Automatic Sync** — Watches your vault folder for changes and pushes them automatically.
 - **Cross-Platform** — Supports Windows and Linux. macOS is untested but might work?
-- **Secure Key Storage** — Encryption passwords and API keys are stored in your OS keyring (Windows Credential Manager, macOS Keychain, Linux Secret Service).
+- **Secure Key Storage** — The CLI keeps encryption passwords and API keys in your OS keyring (Windows Credential Manager, macOS Keychain, Linux Secret Service). The server stores only a SHA-256 hash of each API key, never the live secret.
 - **Free & Open Source** — No file size limits, no file count limits, no paywalls.
 
 ## Commands
@@ -120,7 +120,7 @@ Long-running process that watches for local changes and pushes them automaticall
 
 ### Sensitive data
 
-Passwords and API keys are stored in your OS keyring under the `potok` service — never in config files.
+The CLI stores passwords and API keys in your OS keyring under the `potok` service — never in config files. If an older `config.json` still has an `api_key` field, the next `potok` command moves it into the keyring and rewrites the file.
 
 | OS | Keyring backend |
 |---|---|
@@ -136,9 +136,10 @@ Passwords and API keys are stored in your OS keyring under the `potok` service �
 ## Security
 
 - All encryption and decryption happens locally on your device.
-- The server only stores encrypted blobs — it never sees your passwords or plaintext.
-- Passwords and API keys are stored in your OS keyring, not in config files.
-- Encryption uses AES via `golang.org/x/crypto`.
+- The server only stores encrypted blobs — it never sees your passwords or note plaintext.
+- Client secrets (the live API key and vault passphrases) live in the OS keyring, not in `config.json`.
+- Server-side API keys are stored as `sha256:` digests. Keys are 256-bit values from `crypto/rand`, so a fast cryptographic hash is enough to protect them at rest (the same approach used for GitHub personal access tokens). User passwords stay on bcrypt. The live key is shown once at registration and cannot be recovered from the database.
+- Encryption uses AES-GCM via `golang.org/x/crypto`; passphrases are stretched with Argon2id.
 
 ## Roadmap
 

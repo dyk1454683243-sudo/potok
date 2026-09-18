@@ -109,6 +109,7 @@ func TestMeEndpoint(t *testing.T) {
 				ID           string `json:"id"`
 				Email        string `json:"email"`
 				PasswordHash string `json:"password_hash"`
+				APIKey       string `json:"api_key"`
 			}
 			if err := json.Unmarshal(response.Body.Bytes(), &got); err != nil {
 				t.Fatalf("decode response: %v (body: %s)", err, response.Body.String())
@@ -119,6 +120,9 @@ func TestMeEndpoint(t *testing.T) {
 			}
 			if got.PasswordHash != "" {
 				t.Errorf("response leaked password_hash: %q", got.PasswordHash)
+			}
+			if got.APIKey != "" {
+				t.Errorf("response leaked api_key: %q", got.APIKey)
 			}
 		})
 	}
@@ -462,4 +466,48 @@ func TestRegisterEndpoint(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("returns the api key once and does not leak the password hash", func(t *testing.T) {
+		s := newTestStore(t)
+		handler := NewHandler(s, newTestBlobStore(t))
+
+		req := httptest.NewRequest(http.MethodPost, "/register", strings.NewReader(
+			`{"email":"a@example.com","password":"hunter2"}`,
+		))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		handler.Register(rec, req)
+
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("expected status code %d, got %d (body: %s)",
+				http.StatusCreated, rec.Code, rec.Body.String())
+		}
+
+		var got struct {
+			ID           string `json:"id"`
+			Email        string `json:"email"`
+			APIKey       string `json:"api_key"`
+			PasswordHash string `json:"password_hash"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+			t.Fatalf("decode response: %v (body: %s)", err, rec.Body.String())
+		}
+		if got.APIKey == "" {
+			t.Fatal("register response omitted api_key; it must be shown once")
+		}
+		if got.PasswordHash != "" {
+			t.Errorf("register response leaked password_hash: %q", got.PasswordHash)
+		}
+
+		lookedUp, err := s.UserByAPIKey(context.Background(), got.APIKey)
+		if err != nil {
+			t.Fatalf("UserByAPIKey(returned key) = %v", err)
+		}
+		if lookedUp.Email != "a@example.com" {
+			t.Errorf("UserByAPIKey email = %q, want a@example.com", lookedUp.Email)
+		}
+		if lookedUp.APIKey != "" {
+			t.Errorf("UserByAPIKey leaked a stored key/hash: %q", lookedUp.APIKey)
+		}
+	})
 }

@@ -35,12 +35,14 @@ type Vault struct {
 }
 
 type User struct {
-	ID           string    `json:"id"`
-	Email        string    `json:"email"`
-	PasswordHash string    `json:"password_hash"`
-	IsAdmin      bool      `json:"is_admin"`
-	APIKey       string    `json:"api_key"`
-	CreatedAt    time.Time `json:"created_at"`
+	ID           string `json:"id"`
+	Email        string `json:"email"`
+	PasswordHash string `json:"password_hash"`
+	IsAdmin      bool   `json:"is_admin"`
+	// APIKey is the plaintext key, populated only by CreateUser so it can
+	// be shown once. Lookups leave it empty; the database stores HashAPIKey.
+	APIKey    string    `json:"-"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 type Blob struct {
@@ -182,11 +184,11 @@ func (s *Store) CreateUser(ctx context.Context, email, password string) (User, e
 	}
 
 	err = s.db.QueryRowContext(ctx, `
-		INSERT INTO users (id, email, password_hash, api_key)
+		INSERT INTO users (id, email, password_hash, api_key_hash)
 		VALUES (?, ?, ?, ?)
 		ON CONFLICT (email) DO NOTHING
 		RETURNING id, email, is_admin, created_at`,
-		user.ID, user.Email, user.PasswordHash, key,
+		user.ID, user.Email, user.PasswordHash, auth.HashAPIKey(key),
 	).Scan(&user.ID, &user.Email, &user.IsAdmin, &user.CreatedAt)
 
 	if err != nil {
@@ -206,11 +208,11 @@ func (s *Store) UserByAPIKey(ctx context.Context, apiKey string) (User, error) {
 
 	var user User
 	err := s.db.QueryRowContext(ctx, `
-		SELECT id, email, password_hash, is_admin, api_key, created_at
+		SELECT id, email, password_hash, is_admin, created_at
 		FROM users
-		WHERE api_key = ?`,
-		apiKey,
-	).Scan(&user.ID, &user.Email, &user.PasswordHash, &user.IsAdmin, &user.APIKey, &user.CreatedAt)
+		WHERE api_key_hash = ?`,
+		auth.HashAPIKey(apiKey),
+	).Scan(&user.ID, &user.Email, &user.PasswordHash, &user.IsAdmin, &user.CreatedAt)
 
 	if err != nil {
 		if err == sql.ErrNoRows {

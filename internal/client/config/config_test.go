@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -190,6 +191,59 @@ func TestVaultReturnsPointer(t *testing.T) {
 
 	if _, ok := cfg.Vault("missing"); ok {
 		t.Error("Vault(missing) = true, want false")
+	}
+}
+
+func TestPeekAndStripLegacyAPIKey(t *testing.T) {
+	tempConfig(t)
+	path, err := Path()
+	if err != nil {
+		t.Fatalf("Path() = %v", err)
+	}
+
+	key, present, err := PeekLegacyAPIKey()
+	if err != nil || present || key != "" {
+		t.Fatalf("PeekLegacyAPIKey() on missing file = (%q, %v, %v)", key, present, err)
+	}
+
+	if err := os.WriteFile(path, []byte(`{
+  "server_url": "https://potok.example.com",
+  "api_key": "potok_plain_from_old_client",
+  "vaults": [{"name":"notes","path":"/home/user/notes"}]
+}
+`), 0o600); err != nil {
+		t.Fatalf("WriteFile() = %v", err)
+	}
+
+	key, present, err = PeekLegacyAPIKey()
+	if err != nil {
+		t.Fatalf("PeekLegacyAPIKey() = %v", err)
+	}
+	if !present || key != "potok_plain_from_old_client" {
+		t.Fatalf("PeekLegacyAPIKey() = (%q, %v), want the leftover secret", key, present)
+	}
+
+	if err := StripLegacyAPIKey(); err != nil {
+		t.Fatalf("StripLegacyAPIKey() = %v", err)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile() = %v", err)
+	}
+	if strings.Contains(string(data), "api_key") || strings.Contains(string(data), "potok_plain_from_old_client") {
+		t.Errorf("config.json still contains the leftover API key:\n%s", data)
+	}
+
+	got, err := Load()
+	if err != nil {
+		t.Fatalf("Load() after strip = %v", err)
+	}
+	if got.ServerURL != "https://potok.example.com" {
+		t.Errorf("ServerURL = %q after strip", got.ServerURL)
+	}
+	if len(got.Vaults) != 1 || got.Vaults[0].Name != "notes" {
+		t.Errorf("Vaults = %+v, want notes preserved", got.Vaults)
 	}
 }
 
