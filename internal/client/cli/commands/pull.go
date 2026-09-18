@@ -36,35 +36,36 @@ func NewPullCmd() *cobra.Command {
 			if !ok {
 				return errors.New(color.RedString("Vault %q is not registered locally, run `potok vault-add %s` first", name, name))
 			}
+			storedName := v.Name
 
 			apiKey, err := secrets.Get(secrets.APIKey)
 			if err != nil {
 				return errors.New(color.RedString("Error getting API key: %v", err))
 			}
 
-			passphrase, err := secrets.Get(secrets.VaultKeyName(name))
+			passphrase, err := secrets.Get(secrets.VaultKeyName(storedName))
 			if err != nil {
-				return errors.New(color.RedString("No stored passphrase for vault %q: %v", name, err))
+				return errors.New(color.RedString("No stored passphrase for vault %q: %v", storedName, err))
 			}
 
 			client := transport.New(cfg.ServerURL, apiKey)
 
-			remote, found, err := client.FetchVault(name)
+			remote, found, err := client.FetchVault(storedName)
 			if err != nil {
 				return err
 			}
 			if !found {
-				return errors.New(color.RedString("Vault %q has not been pushed to the server yet", name))
+				return errors.New(color.RedString("Vault %q has not been pushed to the server yet", storedName))
 			}
 
 			key := crypto.DeriveKey([]byte(passphrase), remote.KDFSalt)
 
-			manifestCiphertext, found, err := client.FetchManifest(name)
+			manifestCiphertext, found, err := client.FetchManifest(storedName)
 			if err != nil {
 				return err
 			}
 			if !found {
-				fmt.Println(color.YellowString("Vault %q has no manifest yet - nothing to pull.", name))
+				fmt.Println(color.YellowString("Vault %q has no manifest yet - nothing to pull.", storedName))
 				return nil
 			}
 
@@ -79,7 +80,7 @@ func NewPullCmd() *cobra.Command {
 			}
 
 			for _, f := range manifest.Files {
-				ciphertext, err := client.DownloadBlob(name, f.BlobID)
+				ciphertext, err := client.DownloadBlob(storedName, f.BlobID)
 				if err != nil {
 					return fmt.Errorf("failed to download %s: %w", f.Path, err)
 				}
@@ -98,7 +99,7 @@ func NewPullCmd() *cobra.Command {
 				}
 			}
 
-			fmt.Println(color.GreenString("Pulled %d file(s) into vault %q.", len(manifest.Files), name))
+			fmt.Println(color.GreenString("Pulled %d file(s) into vault %q.", len(manifest.Files), storedName))
 			return nil
 		},
 	}

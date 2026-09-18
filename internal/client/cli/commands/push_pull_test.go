@@ -216,6 +216,49 @@ func TestPushThenPullWrongPassphraseFails(t *testing.T) {
 	}
 }
 
+func TestPushThenPullCaseInsensitiveVaultName(t *testing.T) {
+	client := newTestServer(t)
+
+	source := t.TempDir()
+	writeVaultFile(t, source, "note.md", []byte("hello, potok"))
+
+	pushVault(t, client, "Notes", source, "hunter2")
+
+	created, found, err := client.FetchVault("NOTES")
+	if err != nil {
+		t.Fatalf("FetchVault(NOTES): %v", err)
+	}
+	if !found {
+		t.Fatal("FetchVault(NOTES) not found")
+	}
+	if created.Name != "Notes" {
+		t.Errorf("FetchVault(NOTES).Name = %q, want stored casing %q", created.Name, "Notes")
+	}
+
+	again, err := client.GetOrCreateVault("notes")
+	if err != nil {
+		t.Fatalf("GetOrCreateVault(notes) after Notes exists: %v", err)
+	}
+	if again.ID != created.ID {
+		t.Errorf("GetOrCreateVault(notes) created a new vault; ID = %q, want %q", again.ID, created.ID)
+	}
+	if again.Name != "Notes" {
+		t.Errorf("GetOrCreateVault(notes).Name = %q, want original %q", again.Name, "Notes")
+	}
+
+	dest := t.TempDir()
+	if err := pullVault(client, "NOTES", dest, "hunter2"); err != nil {
+		t.Fatalf("pullVault(NOTES): %v", err)
+	}
+	content, err := os.ReadFile(filepath.Join(dest, "note.md"))
+	if err != nil {
+		t.Fatalf("read pulled note.md: %v", err)
+	}
+	if string(content) != "hello, potok" {
+		t.Errorf("pulled content = %q, want %q", content, "hello, potok")
+	}
+}
+
 func TestPushCreatesRemoteVaultOnFirstPush(t *testing.T) {
 	client := newTestServer(t)
 

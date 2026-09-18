@@ -26,19 +26,25 @@ func NewVaultRemoveCmd() *cobra.Command {
 				return err
 			}
 
-			if !cfg.RemoveVault(name) {
+			v, ok := cfg.Vault(name)
+			if !ok {
+				return errors.New(color.RedString("Vault %q is not registered locally", name))
+			}
+			storedName := v.Name
+
+			if !cfg.RemoveVault(storedName) {
 				return errors.New(color.RedString("Vault %q is not registered locally", name))
 			}
 
-			if err := secrets.Delete(secrets.VaultKeyName(name)); err != nil && !errors.Is(err, secrets.ErrNotFound) {
-				return fmt.Errorf("failed to delete stored passphrase for vault %q: %w", name, err)
+			if err := secrets.Delete(secrets.VaultKeyName(storedName)); err != nil && !errors.Is(err, secrets.ErrNotFound) {
+				return fmt.Errorf("failed to delete stored passphrase for vault %q: %w", storedName, err)
 			}
 
 			if err := config.Save(cfg); err != nil {
 				return err
 			}
 
-			fmt.Println(color.GreenString("Removed vault %q and its stored passphrase.", name))
+			fmt.Println(color.GreenString("Removed vault %q and its stored passphrase.", storedName))
 			return nil
 		},
 	}
