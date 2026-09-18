@@ -88,8 +88,19 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	w.Write(fmt.Appendf(nil, "User created: %v", user))
+	json.NewEncoder(w).Encode(struct {
+		ID        string    `json:"id"`
+		Email     string    `json:"email"`
+		APIKey    string    `json:"api_key"`
+		CreatedAt time.Time `json:"created_at"`
+	}{
+		ID:        user.ID,
+		Email:     user.Email,
+		APIKey:    user.APIKey,
+		CreatedAt: user.CreatedAt,
+	})
 }
 
 func (h *Handler) CreateVault(w http.ResponseWriter, r *http.Request) {

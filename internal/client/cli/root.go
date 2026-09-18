@@ -16,6 +16,10 @@ func newRootCmd() *cobra.Command {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 
+		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
+			return commands.MigrateLegacyAPIKey()
+		},
+
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return cmd.Help()
 		},

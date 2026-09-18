@@ -4,7 +4,10 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"strings"
 	"testing"
+
+	"github.com/mtiluk/potok/internal/server/auth"
 )
 
 func newTestStore(t *testing.T) *Store {
@@ -252,5 +255,101 @@ func TestDeleteVaultScopedToUser(t *testing.T) {
 
 	if _, err := s.VaultByName(context.Background(), userA.ID, "notes"); err != nil {
 		t.Errorf("userA's vault should still exist after userB's delete attempt, got: %v", err)
+	}
+}
+
+func TestCreateUserStoresHashedAPIKey(t *testing.T) {
+	s := newTestStore(t)
+	user := seedUser(t, s, "a@example.com")
+
+	if user.APIKey == "" {
+		t.Fatal("CreateUser() did not return the plaintext API key")
+	}
+	if !strings.HasPrefix(user.APIKey, "potok_") {
+		t.Errorf("CreateUser() APIKey = %q, want potok_ prefix", user.APIKey)
+	}
+
+	var stored string
+	if err := s.db.QueryRow(`SELECT api_key_hash FROM users WHERE id = ?`, user.ID).Scan(&stored); err != nil {
+		t.Fatalf("read stored hash: %v", err)
+	}
+	if stored == user.APIKey {
+		t.Fatal("CreateUser() stored the plaintext API key")
+	}
+	if stored != auth.HashAPIKey(user.APIKey) {
+		t.Errorf("stored hash = %q, want %q", stored, auth.HashAPIKey(user.APIKey))
+	}
+}
+
+func TestUserByAPIKey(t *testing.T) {
+	s := newTestStore(t)
+	user := seedUser(t, s, "a@example.com")
+
+	got, err := s.UserByAPIKey(context.Background(), user.APIKey)
+	if err != nil {
+		t.Fatalf("UserByAPIKey() error: %v", err)
+	}
+	if got.ID != user.ID {
+		t.Errorf("ID = %q, want %q", got.ID, user.ID)
+	}
+	if got.Email != user.Email {
+		t.Errorf("Email = %q, want %q", got.Email, user.Email)
+	}
+	if got.APIKey != "" {
+		t.Errorf("APIKey = %q, want empty (hash must not be returned)", got.APIKey)
+	}
+
+	if _, err := s.UserByAPIKey(context.Background(), ""); !errors.Is(err, ErrUserNotFound) {
+		t.Errorf("UserByAPIKey(\"\") = %v, want ErrUserNotFound", err)
+	}
+	if _, err := s.UserByAPIKey(context.Background(), "potok_doesnotexist"); !errors.Is(err, ErrUserNotFound) {
+		t.Errorf("UserByAPIKey(unknown) = %v, want ErrUserNotFound", err)
+	}
+}
+
+func TestMigrateHashesLegacyPlaintextAPIKeys(t *testing.T) {
+	s := newTestStore(t)
+	const plaintext = "potok_legacyplaintextkey0123456789abcd"
+
+	if _, err := s.db.Exec(`
+		INSERT INTO users (id, email, password_hash, api_key_hash)
+		VALUES (?, ?, ?, ?)`,
+		"user-legacy", "legacy@example.com", "not-a-real-hash", plaintext,
+	); err != nil {
+		t.Fatalf("insert legacy user: %v", err)
+	}
+
+	if err := s.hashPlaintextAPIKeys(context.Background()); err != nil {
+		t.Fatalf("hashPlaintextAPIKeys() = %v", err)
+	}
+
+	var stored string
+	if err := s.db.QueryRow(`SELECT api_key_hash FROM users WHERE id = ?`, "user-legacy").Scan(&stored); err != nil {
+		t.Fatalf("read stored hash: %v", err)
+	}
+	if stored == plaintext {
+		t.Fatal("legacy plaintext API key was left in the database")
+	}
+	if stored != auth.HashAPIKey(plaintext) {
+		t.Errorf("stored hash = %q, want %q", stored, auth.HashAPIKey(plaintext))
+	}
+
+	got, err := s.UserByAPIKey(context.Background(), plaintext)
+	if err != nil {
+		t.Fatalf("UserByAPIKey(legacy key) after migrate = %v", err)
+	}
+	if got.Email != "legacy@example.com" {
+		t.Errorf("Email = %q, want legacy@example.com", got.Email)
+	}
+
+	if err := s.hashPlaintextAPIKeys(context.Background()); err != nil {
+		t.Fatalf("hashPlaintextAPIKeys() second run = %v", err)
+	}
+	var storedAgain string
+	if err := s.db.QueryRow(`SELECT api_key_hash FROM users WHERE id = ?`, "user-legacy").Scan(&storedAgain); err != nil {
+		t.Fatalf("read stored hash after second run: %v", err)
+	}
+	if storedAgain != stored {
+		t.Errorf("second migrate pass re-hashed: %q -> %q", stored, storedAgain)
 	}
 }

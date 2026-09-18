@@ -74,6 +74,50 @@ func Load() (*Config, error) {
 	return &cfg, nil
 }
 
+// PeekLegacyAPIKey returns a leftover plaintext api_key from config.json.
+// Older clients may have written the secret into the file; current clients
+// keep it in the OS keyring instead. Missing files are not an error.
+func PeekLegacyAPIKey() (key string, present bool, err error) {
+	path, err := Path()
+	if err != nil {
+		return "", false, err
+	}
+
+	data, err := os.ReadFile(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, fmt.Errorf("config: read %s: %w", path, err)
+	}
+
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return "", false, fmt.Errorf("config: parse %s: %w", path, err)
+	}
+	value, ok := raw["api_key"]
+	if !ok {
+		return "", false, nil
+	}
+	if err := json.Unmarshal(value, &key); err != nil {
+		return "", true, fmt.Errorf("config: api_key in %s must be a string", path)
+	}
+	return strings.TrimSpace(key), true, nil
+}
+
+// StripLegacyAPIKey rewrites config.json without an api_key field.
+func StripLegacyAPIKey() error {
+	_, present, err := PeekLegacyAPIKey()
+	if err != nil || !present {
+		return err
+	}
+	cfg, err := Load()
+	if err != nil {
+		return err
+	}
+	return Save(cfg)
+}
+
 func Save(cfg *Config) error {
 	if err := cfg.Validate(); err != nil {
 		return err
