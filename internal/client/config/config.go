@@ -141,10 +141,11 @@ func (c *Config) Validate() error {
 		if err := ValidateVaultName(v.Name); err != nil {
 			return err
 		}
-		if _, dup := seen[v.Name]; dup {
+		key := strings.ToLower(v.Name)
+		if _, dup := seen[key]; dup {
 			return fmt.Errorf("config: vault %q is registered twice", v.Name)
 		}
-		seen[v.Name] = struct{}{}
+		seen[key] = struct{}{}
 
 		if !filepath.IsAbs(v.Path) {
 			return fmt.Errorf("config: vault %q needs an absolute path, got %q", v.Name, v.Path)
@@ -171,7 +172,7 @@ func ValidateVaultName(name string) error {
 
 func (c *Config) Vault(name string) (*Vault, bool) {
 	for i := range c.Vaults {
-		if c.Vaults[i].Name == name {
+		if vaultNameEqual(c.Vaults[i].Name, name) {
 			return &c.Vaults[i], true
 		}
 	}
@@ -194,10 +195,14 @@ func (c *Config) AddVault(v Vault) error {
 
 func (c *Config) RemoveVault(name string) bool {
 	for i := range c.Vaults {
-		if c.Vaults[i].Name == name {
+		if vaultNameEqual(c.Vaults[i].Name, name) {
 			c.Vaults = append(c.Vaults[:i], c.Vaults[i+1:]...)
 			return true
 		}
 	}
 	return false
+}
+
+func vaultNameEqual(a, b string) bool {
+	return strings.EqualFold(a, b)
 }

@@ -69,6 +69,30 @@ func TestVaultRemoveDeletesStoredPassphrase(t *testing.T) {
 	}
 }
 
+func TestVaultRemoveMatchesNameCaseInsensitively(t *testing.T) {
+	setupVaultRemove(t)
+	saveConfigWithVault(t)
+
+	if err := secrets.Set(secrets.VaultKeyName("notes"), "supersecret"); err != nil {
+		t.Fatalf("secrets.Set() = %v", err)
+	}
+
+	if err := executeCmd(t, NewVaultRemoveCmd(), "NOTES"); err != nil {
+		t.Fatalf("vault-remove NOTES = %v", err)
+	}
+
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf("config.Load() = %v", err)
+	}
+	if len(cfg.Vaults) != 0 {
+		t.Errorf("Vaults = %+v, want none after case-insensitive removal", cfg.Vaults)
+	}
+	if _, err := secrets.Get(secrets.VaultKeyName("notes")); !errors.Is(err, secrets.ErrNotFound) {
+		t.Errorf("secrets.Get() after case-insensitive remove = %v, want ErrNotFound", err)
+	}
+}
+
 func TestVaultRemoveFailsForUnknownVault(t *testing.T) {
 	setupVaultRemove(t)
 	saveConfigWithVault(t)

@@ -37,20 +37,21 @@ func NewPushCmd() *cobra.Command {
 			if !ok {
 				return errors.New(color.RedString("Vault %q is not registered locally, run `potok vault-add %s` first", name, name))
 			}
+			storedName := v.Name
 
 			apiKey, err := secrets.Get(secrets.APIKey)
 			if err != nil {
 				return errors.New(color.RedString("Error getting API key: %v", err))
 			}
 
-			passphrase, err := secrets.Get(secrets.VaultKeyName(name))
+			passphrase, err := secrets.Get(secrets.VaultKeyName(storedName))
 			if err != nil {
-				return errors.New(color.RedString("No stored passphrase for vault %q: %v", name, err))
+				return errors.New(color.RedString("No stored passphrase for vault %q: %v", storedName, err))
 			}
 
 			client := transport.New(cfg.ServerURL, apiKey)
 
-			remote, err := client.GetOrCreateVault(name)
+			remote, err := client.GetOrCreateVault(storedName)
 			if err != nil {
 				return err
 			}
@@ -75,7 +76,7 @@ func NewPushCmd() *cobra.Command {
 					return fmt.Errorf("failed to encrypt %s: %w", f.Path, err)
 				}
 
-				blobID, err := client.UploadBlob(name, ciphertext)
+				blobID, err := client.UploadBlob(storedName, ciphertext)
 				if err != nil {
 					return fmt.Errorf("failed to upload %s: %w", f.Path, err)
 				}
@@ -98,19 +99,19 @@ func NewPushCmd() *cobra.Command {
 				return fmt.Errorf("failed to encrypt manifest: %w", err)
 			}
 
-			generation, err := client.CurrentManifestGeneration(name)
+			generation, err := client.CurrentManifestGeneration(storedName)
 			if err != nil {
 				return err
 			}
 
-			if err := client.PutManifest(name, generation, manifestCiphertext); err != nil {
+			if err := client.PutManifest(storedName, generation, manifestCiphertext); err != nil {
 				if errors.Is(err, transport.ErrConflict) {
 					return errors.New(color.RedString(transport.ErrConflict.Error()))
 				}
 				return err
 			}
 
-			fmt.Println(color.GreenString("Pushed %d file(s) from vault %q.", len(files), name))
+			fmt.Println(color.GreenString("Pushed %d file(s) from vault %q.", len(files), storedName))
 			return nil
 		},
 	}

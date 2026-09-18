@@ -125,16 +125,17 @@ func TestValidate(t *testing.T) {
 		cfg     Config
 		wantErr bool
 	}{
-		"zero value":          {cfg: Config{}},
-		"valid":               {cfg: Config{ServerURL: "http://localhost:8080", Vaults: []Vault{{Name: "notes", Path: "/home/user/notes"}}}},
-		"bad scheme":          {cfg: Config{ServerURL: "ftp://example.com"}, wantErr: true},
-		"no host":             {cfg: Config{ServerURL: "https://"}, wantErr: true},
-		"relative path":       {cfg: Config{Vaults: []Vault{{Name: "notes", Path: "notes"}}}, wantErr: true},
-		"duplicate names":     {cfg: Config{Vaults: []Vault{{Name: "a", Path: "/a"}, {Name: "a", Path: "/b"}}}, wantErr: true},
-		"empty name":          {cfg: Config{Vaults: []Vault{{Name: "", Path: "/a"}}}, wantErr: true},
-		"name with space":     {cfg: Config{Vaults: []Vault{{Name: "my notes", Path: "/a"}}}, wantErr: true},
-		"name with separator": {cfg: Config{Vaults: []Vault{{Name: "work/notes", Path: "/a"}}}, wantErr: true},
-		"name starts with -":  {cfg: Config{Vaults: []Vault{{Name: "-force", Path: "/a"}}}, wantErr: true},
+		"zero value":           {cfg: Config{}},
+		"valid":                {cfg: Config{ServerURL: "http://localhost:8080", Vaults: []Vault{{Name: "notes", Path: "/home/user/notes"}}}},
+		"bad scheme":           {cfg: Config{ServerURL: "ftp://example.com"}, wantErr: true},
+		"no host":              {cfg: Config{ServerURL: "https://"}, wantErr: true},
+		"relative path":        {cfg: Config{Vaults: []Vault{{Name: "notes", Path: "notes"}}}, wantErr: true},
+		"duplicate names":      {cfg: Config{Vaults: []Vault{{Name: "a", Path: "/a"}, {Name: "a", Path: "/b"}}}, wantErr: true},
+		"duplicate names case": {cfg: Config{Vaults: []Vault{{Name: "Notes", Path: "/a"}, {Name: "notes", Path: "/b"}}}, wantErr: true},
+		"empty name":           {cfg: Config{Vaults: []Vault{{Name: "", Path: "/a"}}}, wantErr: true},
+		"name with space":      {cfg: Config{Vaults: []Vault{{Name: "my notes", Path: "/a"}}}, wantErr: true},
+		"name with separator":  {cfg: Config{Vaults: []Vault{{Name: "work/notes", Path: "/a"}}}, wantErr: true},
+		"name starts with -":   {cfg: Config{Vaults: []Vault{{Name: "-force", Path: "/a"}}}, wantErr: true},
 	}
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -153,6 +154,9 @@ func TestAddVault(t *testing.T) {
 	}
 	if err := cfg.AddVault(Vault{Name: "notes", Path: "/elsewhere"}); err == nil {
 		t.Error("AddVault() = nil, want an error for a duplicate name")
+	}
+	if err := cfg.AddVault(Vault{Name: "NOTES", Path: "/elsewhere"}); err == nil {
+		t.Error("AddVault() = nil, want an error for a case-insensitive duplicate name")
 	}
 	if err := cfg.AddVault(Vault{Name: "work", Path: "relative"}); err == nil {
 		t.Error("AddVault() = nil, want an error for a relative path")
@@ -176,6 +180,17 @@ func TestRemoveVault(t *testing.T) {
 	}
 }
 
+func TestRemoveVaultCaseInsensitive(t *testing.T) {
+	cfg := &Config{Vaults: []Vault{{Name: "Notes", Path: "/a"}, {Name: "work", Path: "/b"}}}
+
+	if !cfg.RemoveVault("NOTES") {
+		t.Error("RemoveVault(NOTES) = false, want true")
+	}
+	if len(cfg.Vaults) != 1 || cfg.Vaults[0].Name != "work" {
+		t.Errorf("Vaults = %+v, want work only", cfg.Vaults)
+	}
+}
+
 func TestVaultReturnsPointer(t *testing.T) {
 	cfg := &Config{Vaults: []Vault{{Name: "notes", Path: "/a"}}}
 
@@ -190,6 +205,29 @@ func TestVaultReturnsPointer(t *testing.T) {
 
 	if _, ok := cfg.Vault("missing"); ok {
 		t.Error("Vault(missing) = true, want false")
+	}
+}
+
+func TestVaultCaseInsensitive(t *testing.T) {
+	cfg := &Config{Vaults: []Vault{{Name: "Notes", Path: "/a"}}}
+
+	for _, name := range []string{"Notes", "notes", "NOTES", "nOtEs"} {
+		v, ok := cfg.Vault(name)
+		if !ok {
+			t.Fatalf("Vault(%q) not found", name)
+		}
+		if v.Name != "Notes" {
+			t.Errorf("Vault(%q).Name = %q, want stored casing %q", name, v.Name, "Notes")
+		}
+	}
+
+	v, ok := cfg.Vault("NOTES")
+	if !ok {
+		t.Fatal("Vault(NOTES) not found")
+	}
+	v.RemoteID = "vault_123"
+	if cfg.Vaults[0].RemoteID != "vault_123" {
+		t.Error("Vault() returned a copy; updates would be lost")
 	}
 }
 
