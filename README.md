@@ -1,5 +1,5 @@
 > [!WARNING]
-> Potok is in active development. Some commands are not yet implemented.
+> Potok is in active development. Some advertised features are not implemented yet — see Commands and Roadmap below.
 
 # Potok
 
@@ -9,41 +9,41 @@ For more detail, check out the [Potok Docs](https://potok-docs.vercel.app/)
 
 ## Features
 
-- **End-to-End Encryption** — Vaults are encrypted locally before leaving your device. The server only stores encrypted data.
+- **End-to-End Encryption** — Vault files are encrypted locally before upload. The server only stores encrypted blobs.
 - **Self-Hosted** — Run your own Potok server. No third-party cloud, no vendor lock-in.
-- **Multiple Vaults** — Manage and sync multiple vaults independently.
-- **Automatic Sync** — Watches your vault folder for changes and pushes them automatically.
-- **Cross-Platform** — Supports Windows and Linux. macOS is untested but might work?
-- **Secure Key Storage** — Encryption passwords and API keys are stored in your OS keyring (Windows Credential Manager, macOS Keychain, Linux Secret Service).
+- **Multiple Vaults** — Register and manage several vaults independently.
+- **Manual Push / Pull** — Encrypt and upload with `push`, download and decrypt with `pull`.
+- **Cross-Platform** — Supports Windows and Linux. macOS is untested but might work.
+- **Secure Key Storage** — Encryption passphrases and API keys are stored in your OS keyring (Windows Credential Manager, macOS Keychain, Linux Secret Service).
 - **Free & Open Source** — No file size limits, no file count limits, no paywalls.
 
 ## Commands
 
-| Command | Description |
-|---|---|
-| `potok init` | Set server URL and API key |
-| `potok vault-add` | Register a local folder as a vault |
-| `potok vaults-list` | List vaults registered locally |
-| `potok vault-remove [name]` | Remove a vault from local config |
-| `potok remote-list` | List vaults available on the server |
-| `potok remote-delete [name]` | Delete a vault from the server |
-| `potok push [name]` | Encrypt and upload a vault |
-| `potok pull [name]` | Download and decrypt a vault |
-| `potok sync [name]` | Watch and auto-sync a vault |
-| `potok doctor` | Run diagnostics on your setup |
+| Command | Status | Description |
+|---|---|---|
+| `potok init` | available | Set server URL and API key |
+| `potok vault-add` | available | Register a local folder as a vault |
+| `potok vaults-list` | available | List vaults registered locally |
+| `potok vault-remove [name]` | available | Remove a vault from local config |
+| `potok remote-list` | available | List vaults available on the server |
+| `potok remote-delete [name]` | available | Delete a vault from the server |
+| `potok push [name]` | available | Encrypt and upload a vault (per-file blobs) |
+| `potok pull [name]` | available | Download and decrypt into the registered path |
+| `potok doctor` | available | Run diagnostics on your setup |
+| `potok sync [name]` | **not implemented** | Planned watch / auto-sync |
 
 ## Getting Started
 
 ### Prerequisites
 
-- A running Potok server ([server setup guide](update))
+- A running Potok server (`potokd` in this repository)
 - An API key from your server admin
-- Go 1.21+ (if building from source)
+- Go 1.25+ (if building from source)
 
 ### Install
 
 ```bash
-go install github.com/michaeltukdev/Potok/cmd/client@latest
+go install github.com/mtiluk/potok/cmd/potok@latest
 ```
 
 ### Initialise
@@ -52,7 +52,7 @@ go install github.com/michaeltukdev/Potok/cmd/client@latest
 potok init
 ```
 
-You'll be prompted for your server URL and API key. These are stored locally in `~/.potok/config.json` and your OS keyring respectively.
+You'll be prompted for your server URL and API key. The URL is stored in the config file; the API key is stored in your OS keyring.
 
 ## Usage
 
@@ -62,7 +62,7 @@ You'll be prompted for your server URL and API key. These are stored locally in 
 potok vault-add
 ```
 
-Prompts for a vault name, local folder path, and encryption password. This only registers the vault locally — nothing is uploaded yet.
+Prompts for a vault name, local folder path, and encryption passphrase. This only registers the vault locally — nothing is uploaded yet.
 
 ### List local vaults
 
@@ -78,23 +78,15 @@ Shows all vaults registered on this device with their path and last sync time.
 potok push notes
 ```
 
-Encrypts and uploads the vault to your server. Creates the remote vault automatically on first push.
+Encrypts each file and uploads blobs plus an encrypted manifest. Creates the remote vault automatically on first push.
 
 ### Pull a vault from the server
 
 ```bash
-potok pull notes --dest ~/Documents/Obsidian/Notes
+potok pull notes
 ```
 
-Downloads and decrypts a vault into the specified directory.
-
-### Sync a vault
-
-```bash
-potok sync notes
-```
-
-Long-running process that watches for local changes and pushes them automatically.
+Downloads and decrypts files into the vault's registered local path.
 
 ## Configuration
 
@@ -102,17 +94,18 @@ Long-running process that watches for local changes and pushes them automaticall
 
 | OS | Path |
 |---|---|
-| Linux | `~/.potok/config.json` |
+| Linux / macOS | `~/.potok/config.json` (or `$XDG_CONFIG_HOME/potok/config.json`) |
 | Windows | `%USERPROFILE%\.potok\config.json` |
 
 ```json
 {
-  "api_url": "http://localhost:8080",
+  "server_url": "http://localhost:8080",
   "vaults": [
     {
       "name": "notes",
       "path": "/home/user/Documents/Obsidian/Notes",
-      "last_synced": ""
+      "remote_id": "",
+      "last_synced_at": null
     }
   ]
 }
@@ -120,7 +113,7 @@ Long-running process that watches for local changes and pushes them automaticall
 
 ### Sensitive data
 
-Passwords and API keys are stored in your OS keyring under the `potok` service — never in config files.
+Passphrases and API keys are stored in your OS keyring under the `potok` service — never in config files.
 
 | OS | Keyring backend |
 |---|---|
@@ -131,23 +124,22 @@ Passwords and API keys are stored in your OS keyring under the `potok` service �
 | Keyring entry | Value |
 |---|---|
 | `potok / api-key` | Your server API key |
-| `potok / vault:{name}` | Encryption password for that vault |
+| `potok / vault:{name}` | Encryption passphrase for that vault |
 
 ## Security
 
 - All encryption and decryption happens locally on your device.
-- The server only stores encrypted blobs — it never sees your passwords or plaintext.
-- Passwords and API keys are stored in your OS keyring, not in config files.
+- The server only stores encrypted blobs — it never sees your passphrases or plaintext.
+- Passphrases and API keys are stored in your OS keyring, not in config files.
 - Encryption uses AES via `golang.org/x/crypto`.
 
 ## Roadmap
 
 - [x] CLI skeleton and local vault management
-- [x] OS keyring integration for passwords and API keys
-- [x] Push — encrypt and upload vaults
+- [x] OS keyring integration for passphrases and API keys
+- [x] Push — encrypt and upload vaults (per-file blobs + manifest)
 - [x] Pull — download and decrypt vaults
-- [x] Automatic file watching and sync
-- [x] File-level sync (currently uploads entire vault)
+- [ ] Automatic file watching and sync (`potok sync`)
 - [ ] Conflict detection and handling
 - [ ] Version history
 - [ ] Web dashboard for server admin
